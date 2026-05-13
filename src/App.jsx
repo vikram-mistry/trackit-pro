@@ -16,18 +16,21 @@ class LocalDB {
   constructor() {
     this.db = null;
     this.isFallback = false;
-    this.memoryStore = { settings: [], milk: [], gas: [], categories: [], custom: [] };
+    this.memoryStore = { 
+      settings: [], milk: [], gas: [], water: [], 
+      grocery: [], electricity_lotus: [], electricity_sadri: [], 
+      water_bill: [], other_expenses: [], categories: [], custom: [] 
+    };
   }
 
   async init() {
     if (this.db || this.isFallback) return;
     return new Promise((resolve) => {
       let idb;
-      // Wrap the actual property access in a try/catch to prevent iframe SecurityErrors
       try {
         idb = window.indexedDB;
       } catch (err) {
-        console.warn('IndexedDB access blocked by browser sandbox. Using memory fallback.');
+        console.warn('IndexedDB access blocked. Using memory fallback.');
         this.isFallback = true;
         return resolve();
       }
@@ -40,20 +43,22 @@ class LocalDB {
       try {
         const request = idb.open(DB_NAME, DB_VERSION);
         request.onerror = (e) => {
-          console.warn('IndexedDB restricted, using in-memory fallback.');
           this.isFallback = true;
           resolve();
         };
         request.onsuccess = (e) => { this.db = e.target.result; resolve(); };
         request.onupgradeneeded = (e) => {
           const db = e.target.result;
-          const stores = ['settings', 'milk', 'gas', 'categories', 'custom'];
+          const stores = [
+            'settings', 'milk', 'gas', 'water', 
+            'grocery', 'electricity_lotus', 'electricity_sadri', 
+            'water_bill', 'other_expenses', 'categories', 'custom'
+          ];
           stores.forEach(store => {
             if (!db.objectStoreNames.contains(store)) db.createObjectStore(store, { keyPath: 'id' });
           });
         };
       } catch (e) {
-         console.warn('IndexedDB execution restricted, using in-memory fallback.');
          this.isFallback = true;
          resolve();
       }
@@ -115,10 +120,18 @@ class LocalDB {
   async clearAll() {
     await this.init();
     if (this.isFallback) {
-      this.memoryStore = { settings: [], milk: [], gas: [], categories: [], custom: [] };
+      this.memoryStore = { 
+        settings: [], milk: [], gas: [], water: [], 
+        grocery: [], electricity_lotus: [], electricity_sadri: [], 
+        water_bill: [], other_expenses: [], categories: [], custom: [] 
+      };
       return;
     }
-    const stores = ['settings', 'milk', 'gas', 'categories', 'custom'];
+    const stores = [
+      'settings', 'milk', 'gas', 'water', 
+      'grocery', 'electricity_lotus', 'electricity_sadri', 
+      'water_bill', 'other_expenses', 'categories', 'custom'
+    ];
     for (let store of stores) {
       await new Promise((resolve) => {
         const tx = this.db.transaction(store, 'readwrite');
@@ -134,7 +147,8 @@ const db = new LocalDB();
 // Default Settings
 const DEFAULT_SETTINGS = {
   id: 'main', theme: 'dark', currency: '₹', 
-  milkPrice: 84, milkQty: 1, gasWeight: 14.2
+  milkPrice: 84, milkQty: 1, gasWeight: 14.2,
+  waterTarget: 4
 };
 
 // ==========================================
@@ -228,9 +242,7 @@ export default function App() {
     await db.put('settings', updated);
   };
 
-  if (!isReady) return <div className="min-h-screen bg-black flex items-center justify-center text-white">Loading...</div>;
-
-  return (
+  if (!isReady) return <div className="min-h-screen bg-black flex items-center justify-center text-white">Loading...</div>;  return (
     <div className={`min-h-screen w-full font-sans selection:bg-blue-500/30 ${settings.theme === 'dark' ? 'dark bg-black text-white' : 'bg-gray-50 text-neutral-900'}`}>
       {/* Mobile Wrapper */}
       <div className="max-w-md mx-auto h-screen flex flex-col relative overflow-hidden bg-black">
@@ -248,7 +260,14 @@ export default function App() {
             >
               {activeTab === 'milk' && <MilkView filterDate={filterDate} setFilterDate={setFilterDate} settings={settings} />}
               {activeTab === 'gas' && <GasView filterDate={filterDate} setFilterDate={setFilterDate} settings={settings} />}
+              {activeTab === 'water' && <WaterView filterDate={filterDate} setFilterDate={setFilterDate} settings={settings} />}
               {activeTab === 'settings' && <SettingsView settings={settings} updateSettings={updateSettings} db={db} />}
+              {activeTab === 'grocery' && <ExpenseView type="grocery" title="Grocery" icon={ShoppingCart} filterDate={filterDate} setFilterDate={setFilterDate} settings={settings} />}
+              {activeTab === 'elec-lotus' && <ExpenseView type="electricity_lotus" title="Electricity (Lotus)" icon={Zap} filterDate={filterDate} setFilterDate={setFilterDate} settings={settings} />}
+              {activeTab === 'elec-sadri' && <ExpenseView type="electricity_sadri" title="Electricity (Sadri)" icon={Zap} filterDate={filterDate} setFilterDate={setFilterDate} settings={settings} />}
+              {activeTab === 'water-bill' && <ExpenseView type="water_bill" title="Water Bill" icon={Droplet} filterDate={filterDate} setFilterDate={setFilterDate} settings={settings} />}
+              {activeTab === 'other' && <ExpenseView type="other_expenses" title="Other" icon={Package} filterDate={filterDate} setFilterDate={setFilterDate} settings={settings} />}
+              
               {activeTab.startsWith('custom-') && (
                 <CustomCategoryView 
                   categoryId={activeTab.replace('custom-', '')} 
@@ -267,6 +286,7 @@ export default function App() {
           <div className="flex items-center justify-around bg-neutral-900/80 backdrop-blur-3xl border border-white/10 rounded-full py-2 px-2 shadow-[0_0_40px_rgba(0,0,0,0.5)]">
             <NavIcon icon={Milk} label="Milk" isActive={activeTab === 'milk'} onClick={() => setActiveTab('milk')} />
             <NavIcon icon={Flame} label="Gas" isActive={activeTab === 'gas'} onClick={() => setActiveTab('gas')} />
+            <NavIcon icon={Droplet} label="Water" isActive={activeTab === 'water'} onClick={() => setActiveTab('water')} />
             
             {/* FAB (Add More) */}
             <motion.button
@@ -282,52 +302,58 @@ export default function App() {
         </div>
 
         {/* Add More Bottom Sheet */}
-        <BottomSheet isOpen={isAddSheetOpen} onClose={() => setIsAddSheetOpen(false)} title="Track More">
-          <div className="grid grid-cols-4 gap-4 mt-6">
-            {categories.map(cat => {
-              const Icon = ICONS_MAP[cat.icon] || Package;
-              return (
-                <button 
-                  key={cat.id} 
-                  onClick={() => { setActiveTab(`custom-${cat.id}`); setIsAddSheetOpen(false); }}
-                  className="flex flex-col items-center gap-2"
-                >
-                  <div className="w-16 h-16 rounded-2xl bg-neutral-800 border border-white/5 flex items-center justify-center text-white mb-1">
-                    <Icon size={28} style={{ color: cat.color || '#fff' }}/>
-                  </div>
-                  <span className="text-xs text-neutral-400 font-medium truncate w-full text-center">{cat.name}</span>
-                </button>
-              );
-            })}
-            
-            {/* Create New Category Button */}
-            <button 
-              onClick={() => {
-                const newName = prompt("Enter category name:");
-                if (newName) {
-                  const newCat = { 
-                    id: Date.now().toString(), name: newName, icon: 'Package', 
-                    defaultQty: 1, defaultAmount: 0, unit: 'units', color: '#3b82f6'
-                  };
-                  db.put('categories', newCat).then(() => {
-                    setCategories([...categories, newCat]);
-                  });
-                }
-              }}
-              className="flex flex-col items-center gap-2"
-            >
-              <div className="w-16 h-16 rounded-2xl border-2 border-dashed border-white/20 flex items-center justify-center text-neutral-400">
-                <Plus size={28} />
-              </div>
-              <span className="text-xs text-neutral-400 font-medium">New</span>
-            </button>
+        <BottomSheet isOpen={isAddSheetOpen} onClose={() => setIsAddSheetOpen(false)} title="Track Expenses">
+          <div className="grid grid-cols-2 gap-4 mt-6">
+             <ExpenseMenuItem icon={ShoppingCart} label="Grocery" onClick={() => { setActiveTab('grocery'); setIsAddSheetOpen(false); }} color="#10b981" />
+             <ExpenseMenuItem icon={Zap} label="Elec (Lotus)" onClick={() => { setActiveTab('elec-lotus'); setIsAddSheetOpen(false); }} color="#f59e0b" />
+             <ExpenseMenuItem icon={Zap} label="Elec (Sadri)" onClick={() => { setActiveTab('elec-sadri'); setIsAddSheetOpen(false); }} color="#f59e0b" />
+             <ExpenseMenuItem icon={Droplet} label="Water Bill" onClick={() => { setActiveTab('water-bill'); setIsAddSheetOpen(false); }} color="#3b82f6" />
+             <ExpenseMenuItem icon={Package} label="Other" onClick={() => { setActiveTab('other'); setIsAddSheetOpen(false); }} color="#8b5cf6" />
+          </div>
+          
+          <div className="mt-8 pt-6 border-t border-white/5">
+            <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4">Custom Categories</h3>
+            <div className="grid grid-cols-4 gap-4">
+              {categories.map(cat => {
+                const Icon = ICONS_MAP[cat.icon] || Package;
+                return (
+                  <button key={cat.id} onClick={() => { setActiveTab(`custom-${cat.id}`); setIsAddSheetOpen(false); }} className="flex flex-col items-center gap-2">
+                    <div className="w-12 h-12 rounded-xl bg-neutral-800 border border-white/5 flex items-center justify-center text-white">
+                      <Icon size={20} style={{ color: cat.color || '#fff' }}/>
+                    </div>
+                    <span className="text-[10px] text-neutral-400 font-medium truncate w-full text-center">{cat.name}</span>
+                  </button>
+                );
+              })}
+              <button 
+                onClick={() => {
+                  const newName = prompt("Enter category name:");
+                  if (newName) {
+                    const newCat = { id: Date.now().toString(), name: newName, icon: 'Package', defaultQty: 1, defaultAmount: 0, unit: 'units', color: '#3b82f6' };
+                    db.put('categories', newCat).then(() => { setCategories([...categories, newCat]); });
+                  }
+                }}
+                className="flex flex-col items-center gap-2"
+              >
+                <div className="w-12 h-12 rounded-xl border-2 border-dashed border-white/20 flex items-center justify-center text-neutral-400"><Plus size={20} /></div>
+                <span className="text-[10px] text-neutral-400 font-medium">New</span>
+              </button>
+            </div>
           </div>
         </BottomSheet>
-
       </div>
     </div>
   );
 }
+
+const ExpenseMenuItem = ({ icon: Icon, label, onClick, color }) => (
+  <button onClick={onClick} className="flex items-center gap-3 bg-neutral-800/50 hover:bg-neutral-800 border border-white/5 p-4 rounded-2xl transition-colors">
+    <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${color}20`, color }}>
+      <Icon size={20} />
+    </div>
+    <span className="text-white font-semibold text-sm">{label}</span>
+  </button>
+);
 
 const NavIcon = ({ icon: Icon, label, isActive, onClick }) => (
   <button onClick={onClick} className="flex flex-col items-center gap-1 w-16">
@@ -339,7 +365,7 @@ const NavIcon = ({ icon: Icon, label, isActive, onClick }) => (
 // ==========================================
 // 4. UI COMPONENTS (SHEET, HEADER)
 // ==========================================
-const BottomSheet = ({ isOpen, onClose, title, children }) => {
+const BottomSheet = ({ isOpen, onClose, title, children, isCentered = false }) => {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -349,18 +375,25 @@ const BottomSheet = ({ isOpen, onClose, title, children }) => {
             onClick={onClose}
             className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50"
           />
-          <motion.div
-            initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="absolute bottom-0 left-0 right-0 bg-neutral-900 border-t border-white/10 rounded-t-[40px] p-6 pb-12 z-50 max-h-[85vh] overflow-y-auto"
-          >
-            <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-6" />
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold text-white tracking-tight">{title}</h2>
-              <button onClick={onClose} className="p-2 bg-white/10 rounded-full text-white"><X size={20}/></button>
-            </div>
-            {children}
-          </motion.div>
+          <div className={`absolute inset-0 z-50 flex ${isCentered ? 'items-center justify-center p-4' : 'items-end'}`}>
+            <motion.div
+              initial={isCentered ? { scale: 0.9, opacity: 0 } : { y: '100%' }}
+              animate={isCentered ? { scale: 1, opacity: 1 } : { y: 0 }}
+              exit={isCentered ? { scale: 0.9, opacity: 0 } : { y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className={`bg-neutral-900 border-t border-white/10 w-full max-h-[85vh] overflow-y-auto 
+                ${isCentered ? 'rounded-[40px] border shadow-2xl relative' : 'rounded-t-[40px] pb-12'}`}
+            >
+              {!isCentered && <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mt-6 mb-6" />}
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-2xl font-bold text-white tracking-tight">{title}</h2>
+                  <button onClick={onClose} className="p-2 bg-white/10 rounded-full text-white"><X size={20}/></button>
+                </div>
+                {children}
+              </div>
+            </motion.div>
+          </div>
         </>
       )}
     </AnimatePresence>
@@ -394,6 +427,7 @@ function MilkView({ filterDate, setFilterDate, settings }) {
   const [entries, setEntries] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState(null);
+  const [isListExpanded, setIsListExpanded] = useState(false);
   
   // Selection Mode for Pause
   const [isSelectMode, setIsSelectMode] = useState(false);
@@ -578,7 +612,7 @@ function MilkView({ filterDate, setFilterDate, settings }) {
         {isSelectMode && selectedDates.length > 0 && (
           <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="fixed bottom-24 left-4 right-4 z-40">
             <button onClick={handleBulkPause} className="w-full bg-orange-500 text-white font-bold py-4 rounded-2xl shadow-xl flex items-center justify-center gap-2">
-              <PauseCircle size={20} /> Mark {selectedDates.length} Days as Paused
+              <PauseCircle size={20} /> Mark {selectedDates.length} {selectedDates.length === 1 ? 'Day' : 'Days'} as Paused
             </button>
           </motion.div>
         )}
@@ -586,47 +620,72 @@ function MilkView({ filterDate, setFilterDate, settings }) {
 
       {/* List View (Recent) */}
       <div className="mt-8">
-        <h3 className="text-lg font-semibold text-white mb-4">Entries List</h3>
-        {entries.length === 0 && <p className="text-neutral-500 text-center py-4 text-sm">No entries this month.</p>}
-        {entries.map(entry => (
-          <SwipeableItem key={entry.id} onDelete={() => handleDelete(entry.id)} onEdit={() => openEdit(entry)}>
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${entry.isPaused ? 'bg-orange-500/20 text-orange-400' : 'bg-blue-500/20 text-blue-400'}`}>
-                  {entry.isPaused ? <PauseCircle size={20}/> : <Droplet size={20}/>}
-                </div>
-                <div>
-                  <p className="text-white font-semibold">{new Date(entry.date).toLocaleDateString('en-US', {day: 'numeric', month: 'short'})}</p>
-                  <p className="text-xs text-neutral-400">{entry.isPaused ? 'Paused' : `${entry.qty}L @ ${settings.currency}${entry.price}`}</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className={`font-bold ${entry.isPaused ? 'text-neutral-500' : 'text-white'}`}>
-                  {entry.isPaused ? '-' : `${settings.currency}${entry.total}`}
-                </p>
-              </div>
-            </div>
-          </SwipeableItem>
-        ))}
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-white">Entries List</h3>
+          <button 
+            onClick={() => setIsListExpanded(!isListExpanded)}
+            className="text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            {isListExpanded ? 'Collapse' : 'Expand'}
+          </button>
+        </div>
+        
+        <AnimatePresence>
+          {isListExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              {entries.length === 0 && <p className="text-neutral-500 text-center py-4 text-sm">No entries this month.</p>}
+              {entries.map(entry => (
+                <SwipeableItem key={entry.id} onDelete={() => handleDelete(entry.id)} onEdit={() => openEdit(entry)}>
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${entry.isPaused ? 'bg-orange-500/20 text-orange-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                        {entry.isPaused ? <PauseCircle size={20}/> : <Droplet size={20}/>}
+                      </div>
+                      <div>
+                        <p className="text-white font-semibold">{new Date(entry.date).toLocaleDateString('en-US', {day: 'numeric', month: 'short'})}</p>
+                        <p className="text-xs text-neutral-400">{entry.isPaused ? 'Paused' : `${entry.qty}L @ ${settings.currency}${entry.price}`}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className={`font-bold ${entry.isPaused ? 'text-neutral-500' : 'text-white'}`}>
+                        {entry.isPaused ? '-' : `${settings.currency}${entry.total}`}
+                      </p>
+                    </div>
+                  </div>
+                </SwipeableItem>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Add/Edit Modal */}
-      <BottomSheet isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingEntry ? "Edit Milk Entry" : "Add Milk Entry"}>
+      <BottomSheet 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title={editingEntry ? "Edit Milk Entry" : "Add Milk Entry"}
+        isCentered={true}
+      >
         <div className="space-y-4">
           <div>
             <label className="text-xs text-neutral-400 uppercase font-semibold pl-1">Date</label>
             <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white mt-1 focus:border-blue-500 outline-none" />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs text-neutral-400 uppercase font-semibold pl-1">Quantity (Litres)</label>
+            <div className="min-w-0">
+              <label className="text-xs text-neutral-400 uppercase font-semibold pl-1">Quantity (L)</label>
               <input type="number" step="0.5" value={formData.qty} onChange={e => setFormData({...formData, qty: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white mt-1 text-xl font-bold focus:border-blue-500 outline-none" />
             </div>
-            <div>
-              <label className="text-xs text-neutral-400 uppercase font-semibold pl-1">Price/Litre</label>
+            <div className="min-w-0">
+              <label className="text-xs text-neutral-400 uppercase font-semibold pl-1">Price/L</label>
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400">{settings.currency}</span>
-                <input type="number" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 pl-8 text-white mt-1 text-xl font-bold focus:border-blue-500 outline-none" />
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 text-sm">{settings.currency}</span>
+                <input type="number" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full bg-black/50 border border-white/10 rounded-xl p-4 pl-7 text-white mt-1 text-xl font-bold focus:border-blue-500 outline-none" />
               </div>
             </div>
           </div>
@@ -990,6 +1049,12 @@ function SettingsView({ settings, updateSettings, db }) {
         settings: await db.getAll('settings'),
         milk: await db.getAll('milk'),
         gas: await db.getAll('gas'),
+        water: await db.getAll('water'),
+        grocery: await db.getAll('grocery'),
+        electricity_lotus: await db.getAll('electricity_lotus'),
+        electricity_sadri: await db.getAll('electricity_sadri'),
+        water_bill: await db.getAll('water_bill'),
+        other_expenses: await db.getAll('other_expenses'),
         categories: await db.getAll('categories'),
         custom: await db.getAll('custom')
       };
@@ -1018,6 +1083,12 @@ function SettingsView({ settings, updateSettings, db }) {
         if(data.settings) for(let i of data.settings) await db.put('settings', i);
         if(data.milk) for(let i of data.milk) await db.put('milk', i);
         if(data.gas) for(let i of data.gas) await db.put('gas', i);
+        if(data.water) for(let i of data.water) await db.put('water', i);
+        if(data.grocery) for(let i of data.grocery) await db.put('grocery', i);
+        if(data.electricity_lotus) for(let i of data.electricity_lotus) await db.put('electricity_lotus', i);
+        if(data.electricity_sadri) for(let i of data.electricity_sadri) await db.put('electricity_sadri', i);
+        if(data.water_bill) for(let i of data.water_bill) await db.put('water_bill', i);
+        if(data.other_expenses) for(let i of data.other_expenses) await db.put('other_expenses', i);
         if(data.categories) for(let i of data.categories) await db.put('categories', i);
         if(data.custom) for(let i of data.custom) await db.put('custom', i);
         alert('Data imported successfully! App will reload.');
@@ -1055,6 +1126,16 @@ function SettingsView({ settings, updateSettings, db }) {
                 <option value="dark">Dark Mode</option>
                 <option value="light">Light Mode (Beta)</option>
               </select>
+            </SettingBlock>
+          </GlassCard>
+        </section>
+
+        {/* Water Settings */}
+        <section>
+          <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-widest pl-4 mb-2">Water Goals</h3>
+          <GlassCard className="px-5">
+            <SettingBlock label="Daily Target (L)">
+              <input type="number" step="0.1" value={settings.waterTarget} onChange={e => updateSettings({ waterTarget: Number(e.target.value) })} className="w-full bg-black/40 text-white border border-white/10 rounded-lg p-2 text-right outline-none" />
             </SettingBlock>
           </GlassCard>
         </section>
@@ -1111,13 +1192,278 @@ function SettingsView({ settings, updateSettings, db }) {
         <div className="pt-8 pb-12 flex flex-col items-center justify-center text-center opacity-50">
           <Info size={24} className="text-neutral-400 mb-3" />
           <p className="text-sm text-neutral-300 font-bold tracking-widest uppercase mb-1">Trackit Pro</p>
-          <p className="text-[10px] text-neutral-500 mb-4">Version 1.0.0 • Local Offline DB</p>
+          <p className="text-[10px] text-neutral-500 mb-4">Version 1.1.0 • Local Offline DB</p>
           <div className="flex gap-2 text-[10px] text-neutral-500 bg-white/5 px-3 py-1 rounded-full border border-white/5">
             <span>React</span>•<span>Tailwind</span>•<span>IndexedDB</span>•<span>PWA</span>
           </div>
           <p className="text-xs text-neutral-400 mt-6 font-medium">Made by Vikram Mistry</p>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ==========================================
+// 9. WATER MODULE
+// ==========================================
+function WaterView({ filterDate, setFilterDate, settings }) {
+  const [entries, setEntries] = useState([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const target = settings.waterTarget || 4;
+
+  const loadEntries = useCallback(async () => {
+    const all = await db.getAll('water');
+    const today = new Date().toISOString().split('T')[0];
+    const filtered = all.filter(e => e.date === today);
+    setEntries(filtered);
+  }, []);
+
+  useEffect(() => { loadEntries(); }, [loadEntries]);
+
+  const totalToday = entries.reduce((acc, curr) => acc + Number(curr.qty), 0);
+  const percentage = Math.min((totalToday / target) * 100, 100);
+
+  const addWater = async (qty) => {
+    const item = {
+      id: Date.now().toString(),
+      date: new Date().toISOString().split('T')[0],
+      qty
+    };
+    await db.put('water', item);
+    loadEntries();
+  };
+
+  return (
+    <div>
+      <StickyHeader title="Water Intake" date={filterDate} setDate={setFilterDate} />
+      
+      {/* Glass Animation */}
+      <GlassCard className="p-8 mb-8 flex flex-col items-center relative overflow-hidden">
+        <div className="relative w-32 h-48 border-4 border-white/20 rounded-b-3xl rounded-t-lg overflow-hidden bg-neutral-800/40">
+           {/* Water Level */}
+           <motion.div 
+             initial={{ height: 0 }}
+             animate={{ height: `${percentage}%` }}
+             className="absolute bottom-0 left-0 right-0 bg-blue-500/60 backdrop-blur-md"
+             transition={{ type: 'spring', damping: 20, stiffness: 100 }}
+           >
+             {/* Wave Effect */}
+             <motion.div 
+               animate={{ x: [0, -20, 0] }}
+               transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+               className="absolute top-0 left-0 right-[-20px] h-4 bg-blue-400/30 rounded-full blur-sm"
+             />
+           </motion.div>
+        </div>
+        <div className="mt-6 text-center">
+          <p className="text-4xl font-black text-white">{totalToday}L</p>
+          <p className="text-neutral-400 text-sm font-medium">Target: {target}L • {Math.round(percentage)}%</p>
+        </div>
+      </GlassCard>
+
+      <h3 className="text-lg font-semibold text-white mb-4 text-center">Quick Add</h3>
+      <div className="grid grid-cols-4 gap-3 mb-8">
+        {[0.25, 0.5, 0.75, 1].map(qty => (
+          <motion.button
+            key={qty}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => addWater(qty)}
+            className="bg-blue-500/20 border border-blue-500/30 text-blue-400 font-bold py-4 rounded-2xl flex flex-col items-center gap-1"
+          >
+            <Droplet size={18} />
+            <span className="text-xs">{qty}L</span>
+          </motion.button>
+        ))}
+      </div>
+
+      <button 
+        onClick={() => setIsModalOpen(true)}
+        className="w-full bg-neutral-800 text-neutral-400 py-4 rounded-2xl border border-white/5 flex items-center justify-center gap-2"
+      >
+        <Calendar size={18} /> View History
+      </button>
+
+      <BottomSheet isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Water History" isCentered={true}>
+        <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+          {entries.length === 0 && <p className="text-neutral-500 text-center py-4">No entries today yet.</p>}
+          {[...entries].reverse().map(e => (
+            <div key={e.id} className="flex justify-between items-center bg-white/5 p-4 rounded-xl">
+              <span className="text-white font-medium">{e.qty}L</span>
+              <span className="text-neutral-500 text-xs">{new Date(Number(e.id)).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+              <button onClick={async () => { await db.delete('water', e.id); loadEntries(); }} className="text-red-500/50 hover:text-red-500"><Trash2 size={16}/></button>
+            </div>
+          ))}
+        </div>
+      </BottomSheet>
+    </div>
+  );
+}
+
+// ==========================================
+// 10. EXPENSE MODULE (GROCERY, ELEC, etc)
+// ==========================================
+function ExpenseView({ type, title, icon: Icon, filterDate, setFilterDate, settings }) {
+  const [entries, setEntries] = useState([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState(null);
+
+  const [formData, setFormData] = useState({});
+
+  const loadEntries = useCallback(async () => {
+    const all = await db.getAll(type);
+    const filtered = all.filter(e => {
+      const d = new Date(e.date || e.paymentDate);
+      return d.getMonth() === filterDate.getMonth() && d.getFullYear() === filterDate.getFullYear();
+    });
+    setEntries(filtered.sort((a, b) => new Date(b.date || b.paymentDate) - new Date(a.date || a.paymentDate)));
+  }, [type, filterDate]);
+
+  useEffect(() => { loadEntries(); }, [loadEntries]);
+
+  const totalAmount = entries.reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
+
+  const openAdd = () => {
+    setEditingEntry(null);
+    const today = new Date().toISOString().split('T')[0];
+    if (type === 'grocery') setFormData({ purchasedFrom: '', date: today, amount: '', accountName: '', note: '' });
+    else if (type.startsWith('electricity') || type === 'water_bill') setFormData({ amount: '', dueDate: today, paymentDate: today, note: '' });
+    else setFormData({ itemName: '', amount: '', paymentDate: today, note: '' });
+    setIsModalOpen(true);
+  };
+
+  const handleSave = async () => {
+    const item = { id: editingEntry?.id || Date.now().toString(), ...formData };
+    await db.put(type, item);
+    setIsModalOpen(false);
+    loadEntries();
+  };
+
+  const handleDelete = async (id) => {
+    await db.delete(type, id);
+    loadEntries();
+  };
+
+  return (
+    <div>
+      <StickyHeader title={title} date={filterDate} setDate={setFilterDate} />
+      
+      <GlassCard className="p-6 mb-6 bg-gradient-to-br from-neutral-800 to-neutral-900/50 border-white/5">
+        <p className="text-neutral-400 text-xs font-bold uppercase tracking-widest mb-1">Monthly Spending</p>
+        <p className="text-4xl font-black text-white">{settings.currency}{totalAmount}</p>
+      </GlassCard>
+
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold text-white">Record History</h3>
+        <button onClick={openAdd} className="bg-blue-500 text-white px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2">
+          <Plus size={16}/> Add Record
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        {entries.length === 0 && <p className="text-neutral-500 text-center py-8">No records found for this month.</p>}
+        {entries.map(e => (
+          <SwipeableItem key={e.id} onDelete={() => handleDelete(e.id)} onEdit={() => { setEditingEntry(e); setFormData(e); setIsModalOpen(true); }}>
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-blue-400">
+                  <Icon size={20} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-white font-bold truncate">
+                    {e.itemName || e.purchasedFrom || title}
+                  </p>
+                  <p className="text-[10px] text-neutral-500 uppercase font-bold">
+                    {new Date(e.date || e.paymentDate).toLocaleDateString('en-US', {day: 'numeric', month: 'short'})}
+                    {e.accountName && ` • ${e.accountName}`}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-white font-black">{settings.currency}{e.amount}</p>
+              </div>
+            </div>
+          </SwipeableItem>
+        ))}
+      </div>
+
+      <BottomSheet isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`${editingEntry ? 'Edit' : 'Add'} ${title}`} isCentered={true}>
+        <div className="space-y-4">
+          {type === 'grocery' && (
+            <>
+              <div>
+                <label className="text-[10px] text-neutral-500 uppercase font-black mb-1 block ml-1">Purchased From</label>
+                <input type="text" value={formData.purchasedFrom} onChange={e => setFormData({...formData, purchasedFrom: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white outline-none focus:border-blue-500" placeholder="Store Name" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="min-w-0">
+                  <label className="text-[10px] text-neutral-500 uppercase font-black mb-1 block ml-1">Date</label>
+                  <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white text-xs outline-none focus:border-blue-500" />
+                </div>
+                <div className="min-w-0">
+                  <label className="text-[10px] text-neutral-500 uppercase font-black mb-1 block ml-1">Amount</label>
+                  <input type="number" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white outline-none focus:border-blue-500" placeholder="0.00" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] text-neutral-500 uppercase font-black mb-1 block ml-1">Account Name</label>
+                <input type="text" value={formData.accountName} onChange={e => setFormData({...formData, accountName: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white outline-none focus:border-blue-500" placeholder="Payment Method" />
+              </div>
+            </>
+          )}
+
+          {(type.startsWith('electricity') || type === 'water_bill') && (
+            <>
+              <div>
+                <label className="text-[10px] text-neutral-500 uppercase font-black mb-1 block ml-1">Amount</label>
+                <input type="number" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white outline-none focus:border-blue-500" placeholder="0.00" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="min-w-0">
+                  <label className="text-[10px] text-neutral-500 uppercase font-black mb-1 block ml-1">Due Date</label>
+                  <input type="date" value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white text-xs outline-none focus:border-blue-500" />
+                </div>
+                <div className="min-w-0">
+                  <label className="text-[10px] text-neutral-500 uppercase font-black mb-1 block ml-1">Payment Date</label>
+                  <input type="date" value={formData.paymentDate} onChange={e => setFormData({...formData, paymentDate: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white text-xs outline-none focus:border-blue-500" />
+                </div>
+              </div>
+            </>
+          )}
+
+          {type === 'other_expenses' && (
+            <>
+              <div>
+                <label className="text-[10px] text-neutral-500 uppercase font-black mb-1 block ml-1">Item Name</label>
+                <input type="text" value={formData.itemName} onChange={e => setFormData({...formData, itemName: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white outline-none focus:border-blue-500" placeholder="Describe expense" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="min-w-0">
+                  <label className="text-[10px] text-neutral-500 uppercase font-black mb-1 block ml-1">Amount</label>
+                  <input type="number" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white outline-none focus:border-blue-500" placeholder="0.00" />
+                </div>
+                <div className="min-w-0">
+                  <label className="text-[10px] text-neutral-500 uppercase font-black mb-1 block ml-1">Payment Date</label>
+                  <input type="date" value={formData.paymentDate} onChange={e => setFormData({...formData, paymentDate: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white text-xs outline-none focus:border-blue-500" />
+                </div>
+              </div>
+            </>
+          )}
+
+          <div>
+            <label className="text-[10px] text-neutral-500 uppercase font-black mb-1 block ml-1">Note</label>
+            <textarea value={formData.note} onChange={e => setFormData({...formData, note: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white outline-none focus:border-blue-500 min-h-[100px]" placeholder="Add details..." />
+          </div>
+
+          <div className="pt-4 flex gap-3">
+            {editingEntry && (
+              <button onClick={() => handleDelete(editingEntry.id)} className="flex-1 bg-red-500/10 text-red-500 font-bold py-4 rounded-2xl">Delete</button>
+            )}
+            <button onClick={handleSave} className="flex-[2] bg-blue-500 text-white font-bold py-4 rounded-2xl shadow-xl">
+              {editingEntry ? 'Update' : 'Submit'}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
     </div>
   );
 }
