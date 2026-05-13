@@ -1291,7 +1291,15 @@ function WaterView({ filterDate, setFilterDate, settings }) {
             <motion.button 
               key={dateStr}
               whileTap={{ scale: 0.9 }}
-              onClick={() => { setSelectedDate(dateStr); setIsModalOpen(true); }}
+              onClick={() => { 
+                if (selectedDate === dateStr) {
+                  // Second click on same date - open history
+                  setIsModalOpen(true);
+                } else {
+                  // First click on a different date - just update glass
+                  setSelectedDate(dateStr);
+                }
+              }}
               className={`aspect-square rounded-xl flex flex-col items-center justify-center border transition-all
                 ${isSelected ? 'border-blue-500 bg-blue-500/20 ring-2 ring-blue-500/20' : 'border-transparent bg-white/5'}
                 ${isToday && !isSelected ? 'border-white/20' : ''}
