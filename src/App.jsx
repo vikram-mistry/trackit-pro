@@ -499,8 +499,9 @@ function MilkView({ filterDate, setFilterDate, settings }) {
       <StickyHeader title="Milk Tracker" date={filterDate} setDate={setFilterDate} />
       
       {/* Summary Card */}
-      <GlassCard className="p-5 mb-6 bg-gradient-to-br from-blue-500/20 to-purple-500/10">
-        <div className="grid grid-cols-2 gap-4">
+      <GlassCard className="p-5 mb-6 bg-gradient-to-br from-blue-500/20 to-purple-500/10 relative overflow-hidden">
+        <img src="./milk-icon.png" alt="Milk" className="absolute -right-4 -top-4 w-24 h-24 opacity-30 rotate-12 pointer-events-none" />
+        <div className="grid grid-cols-2 gap-4 relative z-10">
           <div>
             <p className="text-neutral-400 text-xs font-medium uppercase tracking-wider mb-1">Total Amount</p>
             <p className="text-3xl font-bold text-white">{settings.currency}{stats.amount}</p>
@@ -1177,28 +1178,26 @@ function SettingsView({ settings, updateSettings, db }) {
 // 9. WATER MODULE
 // ==========================================
 function WaterView({ filterDate, setFilterDate, settings }) {
-  const [entries, setEntries] = useState([]);
   const [allEntries, setAllEntries] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const target = settings.waterTarget || 4;
 
   const loadEntries = useCallback(async () => {
     const all = await db.getAll('water');
     setAllEntries(all);
-    const today = new Date().toISOString().split('T')[0];
-    const filtered = all.filter(e => e.date === today);
-    setEntries(filtered);
   }, []);
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
 
-  const totalToday = entries.reduce((acc, curr) => acc + Number(curr.qty), 0);
-  const percentage = Math.min((totalToday / target) * 100, 100);
+  const dayEntries = allEntries.filter(e => e.date === selectedDate);
+  const totalForSelectedDay = dayEntries.reduce((acc, curr) => acc + Number(curr.qty), 0);
+  const percentage = Math.min((totalForSelectedDay / target) * 100, 100);
 
   const addWater = async (qty) => {
     const item = {
       id: Date.now().toString(),
-      date: new Date().toISOString().split('T')[0],
+      date: selectedDate,
       qty
     };
     await db.put('water', item);
@@ -1252,8 +1251,10 @@ function WaterView({ filterDate, setFilterDate, settings }) {
         </div>
         
         <div className="mt-8 text-center">
-          <p className="text-5xl font-black text-white tracking-tighter">{totalToday}<span className="text-xl text-blue-400 ml-1">L</span></p>
-          <p className="text-neutral-500 text-xs font-bold uppercase tracking-widest mt-1">Goal: {target}L • {Math.round(percentage)}%</p>
+          <p className="text-5xl font-black text-white tracking-tighter">{totalForSelectedDay}<span className="text-xl text-blue-400 ml-1">L</span></p>
+          <p className="text-neutral-500 text-xs font-bold uppercase tracking-widest mt-1">
+            {selectedDate === new Date().toISOString().split('T')[0] ? 'Today' : new Date(selectedDate).toLocaleDateString('en-US', {day: 'numeric', month: 'short'})} Goal: {target}L • {Math.round(percentage)}%
+          </p>
         </div>
       </GlassCard>
 
@@ -1281,37 +1282,38 @@ function WaterView({ filterDate, setFilterDate, settings }) {
           <div key={`empty-${i}`} />
         ))}
         {calendarDays.map(dateStr => {
-          const dayEntries = allEntries.filter(e => e.date === dateStr);
-          const dayTotal = dayEntries.reduce((acc, curr) => acc + Number(curr.qty), 0);
+          const dTotal = allEntries.filter(e => e.date === dateStr).reduce((acc, curr) => acc + Number(curr.qty), 0);
+          const isSelected = dateStr === selectedDate;
           const isToday = dateStr === new Date().toISOString().split('T')[0];
           const dayNum = parseInt(dateStr.split('-')[2], 10);
 
           return (
-            <div 
+            <motion.button 
               key={dateStr}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => { setSelectedDate(dateStr); setIsModalOpen(true); }}
               className={`aspect-square rounded-xl flex flex-col items-center justify-center border transition-all
-                ${isToday ? 'border-blue-500 bg-blue-500/10' : 'border-transparent bg-white/5'}
-                ${dayTotal > 0 ? 'border-blue-500/30' : ''}
+                ${isSelected ? 'border-blue-500 bg-blue-500/20 ring-2 ring-blue-500/20' : 'border-transparent bg-white/5'}
+                ${isToday && !isSelected ? 'border-white/20' : ''}
+                ${dTotal > 0 && !isSelected ? 'border-blue-500/30' : ''}
               `}
             >
-              <span className={`text-xs font-bold ${dayTotal > 0 ? 'text-white' : 'text-neutral-500'}`}>{dayNum}</span>
-              {dayTotal > 0 && <span className="text-[8px] text-blue-400 font-black leading-none mt-0.5">{dayTotal}L</span>}
-            </div>
+              <span className={`text-xs font-bold ${dTotal > 0 || isSelected ? 'text-white' : 'text-neutral-500'}`}>{dayNum}</span>
+              {dTotal > 0 && <span className="text-[8px] text-blue-400 font-black leading-none mt-0.5">{dTotal}L</span>}
+            </motion.button>
           );
         })}
       </div>
 
-      <button 
-        onClick={() => setIsModalOpen(true)}
-        className="w-full bg-neutral-900 text-neutral-400 py-5 rounded-[32px] border border-white/5 flex items-center justify-center gap-2 font-bold shadow-xl"
-      >
-        <Calendar size={18} /> View Detailed History
-      </button>
-
-      <BottomSheet isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Water History" isCentered={true}>
+      <BottomSheet isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`${new Date(selectedDate).toLocaleDateString('en-US', {day: 'numeric', month: 'short'})} Intake`} isCentered={true}>
         <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
-          {entries.length === 0 && <p className="text-neutral-500 text-center py-8">No intake logged today.</p>}
-          {[...entries].reverse().map(e => (
+          {dayEntries.length === 0 && (
+            <div className="text-center py-8">
+               <p className="text-neutral-500 mb-4">No intake logged for this day.</p>
+               <button onClick={() => setIsModalOpen(false)} className="bg-blue-500/20 text-blue-400 px-6 py-2 rounded-full text-xs font-bold">Add Now</button>
+            </div>
+          )}
+          {[...dayEntries].reverse().map(e => (
             <div key={e.id} className="flex justify-between items-center bg-white/5 p-4 rounded-2xl border border-white/5">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">

@@ -15,9 +15,11 @@
 *   **Bulk Actions**: Easily "Bulk Pause" milk delivery for vacations or holidays.
 *   **Automatic Totals**: Real-time calculation of monthly quantity and total cost.
 *   **Smart Entry**: Quick-add or edit entries with a single tap.
+*   **Premium Aesthetic**: Features a custom "Buffalo Milk" glass icon for a personalized touch.
 
 ### 🌊 Water Intake (Hydration)
 *   **Apple-Style Animation**: Premium "Liquid Glass" animation with curvy waves and rising bubbles.
+*   **Interactive History**: Tap any date in the calendar to update the glass and view/delete that day's intake.
 *   **Daily Goals**: Set your 4L (or custom) target and watch the glass fill up.
 *   **Monthly Trends**: A dedicated calendar view showing total hydration for every day of the month.
 
