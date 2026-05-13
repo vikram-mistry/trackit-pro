@@ -302,43 +302,13 @@ export default function App() {
         </div>
 
         {/* Add More Bottom Sheet */}
-        <BottomSheet isOpen={isAddSheetOpen} onClose={() => setIsAddSheetOpen(false)} title="Track Expenses">
+        <BottomSheet isOpen={isAddSheetOpen} onClose={() => setIsAddSheetOpen(false)} title="Track Expenses" isCentered={true}>
           <div className="grid grid-cols-2 gap-4 mt-6">
              <ExpenseMenuItem icon={ShoppingCart} label="Grocery" onClick={() => { setActiveTab('grocery'); setIsAddSheetOpen(false); }} color="#10b981" />
              <ExpenseMenuItem icon={Zap} label="Elec (Lotus)" onClick={() => { setActiveTab('elec-lotus'); setIsAddSheetOpen(false); }} color="#f59e0b" />
              <ExpenseMenuItem icon={Zap} label="Elec (Sadri)" onClick={() => { setActiveTab('elec-sadri'); setIsAddSheetOpen(false); }} color="#f59e0b" />
              <ExpenseMenuItem icon={Droplet} label="Water Bill" onClick={() => { setActiveTab('water-bill'); setIsAddSheetOpen(false); }} color="#3b82f6" />
              <ExpenseMenuItem icon={Package} label="Other" onClick={() => { setActiveTab('other'); setIsAddSheetOpen(false); }} color="#8b5cf6" />
-          </div>
-          
-          <div className="mt-8 pt-6 border-t border-white/5">
-            <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4">Custom Categories</h3>
-            <div className="grid grid-cols-4 gap-4">
-              {categories.map(cat => {
-                const Icon = ICONS_MAP[cat.icon] || Package;
-                return (
-                  <button key={cat.id} onClick={() => { setActiveTab(`custom-${cat.id}`); setIsAddSheetOpen(false); }} className="flex flex-col items-center gap-2">
-                    <div className="w-12 h-12 rounded-xl bg-neutral-800 border border-white/5 flex items-center justify-center text-white">
-                      <Icon size={20} style={{ color: cat.color || '#fff' }}/>
-                    </div>
-                    <span className="text-[10px] text-neutral-400 font-medium truncate w-full text-center">{cat.name}</span>
-                  </button>
-                );
-              })}
-              <button 
-                onClick={() => {
-                  const newName = prompt("Enter category name:");
-                  if (newName) {
-                    const newCat = { id: Date.now().toString(), name: newName, icon: 'Package', defaultQty: 1, defaultAmount: 0, unit: 'units', color: '#3b82f6' };
-                    db.put('categories', newCat).then(() => { setCategories([...categories, newCat]); });
-                  }
-                }}
-                className="flex flex-col items-center gap-2"
-              >
-                <div className="w-12 h-12 rounded-xl border-2 border-dashed border-white/20 flex items-center justify-center text-neutral-400"><Plus size={20} /></div>
-                <span className="text-[10px] text-neutral-400 font-medium">New</span>
-              </button>
-            </div>
           </div>
         </BottomSheet>
       </div>
@@ -1208,11 +1178,13 @@ function SettingsView({ settings, updateSettings, db }) {
 // ==========================================
 function WaterView({ filterDate, setFilterDate, settings }) {
   const [entries, setEntries] = useState([]);
+  const [allEntries, setAllEntries] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const target = settings.waterTarget || 4;
 
   const loadEntries = useCallback(async () => {
     const all = await db.getAll('water');
+    setAllEntries(all);
     const today = new Date().toISOString().split('T')[0];
     const filtered = all.filter(e => e.date === today);
     setEntries(filtered);
@@ -1233,42 +1205,65 @@ function WaterView({ filterDate, setFilterDate, settings }) {
     loadEntries();
   };
 
+  // Calendar Logic
+  const daysInMonth = new Date(filterDate.getFullYear(), filterDate.getMonth() + 1, 0).getDate();
+  const calendarDays = Array.from({length: daysInMonth}, (_, i) => {
+    const d = new Date(filterDate.getFullYear(), filterDate.getMonth(), i + 1);
+    return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
+  });
+
   return (
     <div>
       <StickyHeader title="Water Intake" date={filterDate} setDate={setFilterDate} />
       
       {/* Glass Animation */}
-      <GlassCard className="p-8 mb-8 flex flex-col items-center relative overflow-hidden">
-        <div className="relative w-32 h-48 border-4 border-white/20 rounded-b-3xl rounded-t-lg overflow-hidden bg-neutral-800/40">
-           {/* Water Level */}
+      <GlassCard className="p-8 mb-8 flex flex-col items-center relative overflow-hidden bg-neutral-900/40">
+        <div className="relative w-32 h-48 border-[3px] border-white/20 rounded-b-[40px] rounded-t-lg overflow-hidden bg-black/20 shadow-inner">
+           {/* Water Filling */}
            <motion.div 
              initial={{ height: 0 }}
              animate={{ height: `${percentage}%` }}
-             className="absolute bottom-0 left-0 right-0 bg-blue-500/60 backdrop-blur-md"
-             transition={{ type: 'spring', damping: 20, stiffness: 100 }}
+             className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-blue-600 via-blue-500 to-blue-400"
+             transition={{ type: 'spring', damping: 25, stiffness: 60 }}
            >
-             {/* Wave Effect */}
+             {/* Wave Animation SVG */}
+             <svg className="absolute -top-4 left-0 w-[200%] h-6 fill-blue-400/80 animate-wave" viewBox="0 0 100 20" preserveAspectRatio="none">
+               <path d="M0 10 Q 25 20 50 10 T 100 10 V 20 H 0 Z" />
+             </svg>
+             <svg className="absolute -top-3 left-[-100%] w-[200%] h-6 fill-blue-300/40 animate-wave-slow" viewBox="0 0 100 20" preserveAspectRatio="none">
+               <path d="M0 10 Q 25 20 50 10 T 100 10 V 20 H 0 Z" />
+             </svg>
+
+             {/* Bubbles */}
              <motion.div 
-               animate={{ x: [0, -20, 0] }}
-               transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-               className="absolute top-0 left-0 right-[-20px] h-4 bg-blue-400/30 rounded-full blur-sm"
+               animate={{ y: [-10, -100], opacity: [0, 0.8, 0], x: [0, 10, -10, 0] }}
+               transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+               className="absolute bottom-4 left-1/4 w-1.5 h-1.5 bg-white/40 rounded-full blur-[1px]"
+             />
+             <motion.div 
+               animate={{ y: [-20, -120], opacity: [0, 0.5, 0], x: [10, -5, 5, 0] }}
+               transition={{ duration: 4, repeat: Infinity, ease: "linear", delay: 1 }}
+               className="absolute bottom-8 right-1/3 w-1 h-1 bg-white/30 rounded-full blur-[1px]"
              />
            </motion.div>
+           
+           {/* Glass Shine */}
+           <div className="absolute top-0 left-2 w-2 h-full bg-white/5 skew-x-[-10deg] blur-sm" />
         </div>
-        <div className="mt-6 text-center">
-          <p className="text-4xl font-black text-white">{totalToday}L</p>
-          <p className="text-neutral-400 text-sm font-medium">Target: {target}L • {Math.round(percentage)}%</p>
+        
+        <div className="mt-8 text-center">
+          <p className="text-5xl font-black text-white tracking-tighter">{totalToday}<span className="text-xl text-blue-400 ml-1">L</span></p>
+          <p className="text-neutral-500 text-xs font-bold uppercase tracking-widest mt-1">Goal: {target}L • {Math.round(percentage)}%</p>
         </div>
       </GlassCard>
 
-      <h3 className="text-lg font-semibold text-white mb-4 text-center">Quick Add</h3>
       <div className="grid grid-cols-4 gap-3 mb-8">
         {[0.25, 0.5, 0.75, 1].map(qty => (
           <motion.button
             key={qty}
             whileTap={{ scale: 0.9 }}
             onClick={() => addWater(qty)}
-            className="bg-blue-500/20 border border-blue-500/30 text-blue-400 font-bold py-4 rounded-2xl flex flex-col items-center gap-1"
+            className="bg-blue-500/10 border border-white/5 text-blue-400 font-bold py-4 rounded-3xl flex flex-col items-center gap-1 hover:bg-blue-500/20 transition-colors"
           >
             <Droplet size={18} />
             <span className="text-xs">{qty}L</span>
@@ -1276,21 +1271,60 @@ function WaterView({ filterDate, setFilterDate, settings }) {
         ))}
       </div>
 
+      {/* Water Calendar Grid */}
+      <h3 className="text-lg font-bold text-white mb-4">Monthly View</h3>
+      <div className="grid grid-cols-7 gap-2 mb-8">
+        {['S','M','T','W','T','F','S'].map((d, i) => (
+          <div key={i} className="text-center text-[10px] text-neutral-500 font-black">{d}</div>
+        ))}
+        {Array.from({length: new Date(filterDate.getFullYear(), filterDate.getMonth(), 1).getDay()}).map((_, i) => (
+          <div key={`empty-${i}`} />
+        ))}
+        {calendarDays.map(dateStr => {
+          const dayEntries = allEntries.filter(e => e.date === dateStr);
+          const dayTotal = dayEntries.reduce((acc, curr) => acc + Number(curr.qty), 0);
+          const isToday = dateStr === new Date().toISOString().split('T')[0];
+          const dayNum = parseInt(dateStr.split('-')[2], 10);
+
+          return (
+            <div 
+              key={dateStr}
+              className={`aspect-square rounded-xl flex flex-col items-center justify-center border transition-all
+                ${isToday ? 'border-blue-500 bg-blue-500/10' : 'border-transparent bg-white/5'}
+                ${dayTotal > 0 ? 'border-blue-500/30' : ''}
+              `}
+            >
+              <span className={`text-xs font-bold ${dayTotal > 0 ? 'text-white' : 'text-neutral-500'}`}>{dayNum}</span>
+              {dayTotal > 0 && <span className="text-[8px] text-blue-400 font-black leading-none mt-0.5">{dayTotal}L</span>}
+            </div>
+          );
+        })}
+      </div>
+
       <button 
         onClick={() => setIsModalOpen(true)}
-        className="w-full bg-neutral-800 text-neutral-400 py-4 rounded-2xl border border-white/5 flex items-center justify-center gap-2"
+        className="w-full bg-neutral-900 text-neutral-400 py-5 rounded-[32px] border border-white/5 flex items-center justify-center gap-2 font-bold shadow-xl"
       >
-        <Calendar size={18} /> View History
+        <Calendar size={18} /> View Detailed History
       </button>
 
       <BottomSheet isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Water History" isCentered={true}>
-        <div className="space-y-3 max-h-[50vh] overflow-y-auto">
-          {entries.length === 0 && <p className="text-neutral-500 text-center py-4">No entries today yet.</p>}
+        <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
+          {entries.length === 0 && <p className="text-neutral-500 text-center py-8">No intake logged today.</p>}
           {[...entries].reverse().map(e => (
-            <div key={e.id} className="flex justify-between items-center bg-white/5 p-4 rounded-xl">
-              <span className="text-white font-medium">{e.qty}L</span>
-              <span className="text-neutral-500 text-xs">{new Date(Number(e.id)).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-              <button onClick={async () => { await db.delete('water', e.id); loadEntries(); }} className="text-red-500/50 hover:text-red-500"><Trash2 size={16}/></button>
+            <div key={e.id} className="flex justify-between items-center bg-white/5 p-4 rounded-2xl border border-white/5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">
+                  <Droplet size={18} />
+                </div>
+                <div>
+                  <p className="text-white font-bold">{e.qty}L</p>
+                  <p className="text-[10px] text-neutral-500 font-bold uppercase">{new Date(Number(e.id)).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                </div>
+              </div>
+              <button onClick={async () => { await db.delete('water', e.id); loadEntries(); }} className="p-2 text-red-500/40 hover:text-red-500 hover:bg-red-500/10 rounded-full transition-colors">
+                <Trash2 size={18}/>
+              </button>
             </div>
           ))}
         </div>
